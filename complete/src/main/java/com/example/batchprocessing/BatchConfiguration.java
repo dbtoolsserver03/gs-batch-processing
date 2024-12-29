@@ -1,20 +1,32 @@
 package com.example.batchprocessing;
 
+import java.util.Arrays;
+
 import javax.sql.DataSource;
 
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.StepScope;
+import org.springframework.batch.core.job.CompositeJobParametersValidator;
+import org.springframework.batch.core.job.DefaultJobParametersValidator;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
+import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.item.database.JdbcBatchItemWriter;
 import org.springframework.batch.item.database.builder.JdbcBatchItemWriterBuilder;
 import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
+import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.support.JdbcTransactionManager;
+
+import com.example.batchprocessing.incr.DailyTimestampParamIncrementer;
+import com.example.batchprocessing.validator.NameParamValidator;
 
 @Configuration
 public class BatchConfiguration {
@@ -62,6 +74,22 @@ public class BatchConfiguration {
     }
     // end::readerwriterprocessor[]
 
+    
+    
+    @Bean
+    public NameParamValidator nameParamValidator() {
+    	return  new NameParamValidator();
+    }
+    @Bean
+    public DailyTimestampParamIncrementer dailyTimestampParamIncrementer() {
+    	return  new DailyTimestampParamIncrementer();
+    }
+    
+    
+    
+    
+    
+    
     // tag::jobstep[]
     /**
      * 配置一个 Job，表示批处理任务。
@@ -70,16 +98,41 @@ public class BatchConfiguration {
      * @param step1 步骤1，处理批处理任务的主要逻辑
      * @param listener 作业完成的通知监听器，用于作业执行后的回调操作（例如记录日志、发送通知等）
      * @return 返回配置好的 Job 实例
+     * @throws Exception 
      */
     @Bean
-    public Job importUserJob(JobRepository jobRepository, Step step1, JobCompletionNotificationListener listener) {
-        return new JobBuilder("importUserJob", jobRepository)  // 创建一个 Job 构建器
+    public Job importUserJob(JobRepository jobRepository, Step step2, JobCompletionNotificationListener listener) throws Exception {
+        return new JobBuilder("importUserJob16", jobRepository)  // 创建一个 Job 构建器
             .listener(listener)  // 注册监听器，用于作业完成时的通知
-            .start(step1)  // 定义作业的第一个步骤
+            .start(step2)  // 定义作业的第一个步骤
+//            .validator(defaultJobParametersValidator())
+//            .validator(nameParamValidator())
+            .validator(compositeJobParametersValidator())
+//            .incrementer(new RunIdIncrementer())
+            .incrementer(dailyTimestampParamIncrementer())
+            //.validator(nameParamValidator());
             .build();  // 构建作业
     }
+    @Bean
+    public  DefaultJobParametersValidator defaultJobParametersValidator() {
+    	DefaultJobParametersValidator validator = new DefaultJobParametersValidator();
+    	validator.setRequiredKeys(new String[] {"name","sex"});
+    	validator.setOptionalKeys(new String[] {"age"});
+		return validator;
+	}
+    
+    @Bean
+    public CompositeJobParametersValidator compositeJobParametersValidator() throws Exception {
+    	CompositeJobParametersValidator validator = new CompositeJobParametersValidator();
+    	
+    	validator.setValidators(Arrays.asList(defaultJobParametersValidator(),nameParamValidator()));
+  
+    	validator.afterPropertiesSet();
+    	
+    	return validator;
+    }
 
-    /**
+	/**
      * 配置一个 Step，表示批处理作业中的一个步骤。
      * 每个步骤会处理一批数据，在这个步骤中，我们设置了：
      * - 数据读取（reader）
@@ -103,6 +156,38 @@ public class BatchConfiguration {
             .build();  // 构建步骤
     }
     // end::jobstep[]
+    
+    
+    
+    // 取参数方式chunkContext
+	@Bean
+	public Step step2(JobRepository jobRepository, JdbcTransactionManager transactionManager) {
+		return new StepBuilder("step2", jobRepository).tasklet((contribution, chunkContext) -> {
+			
+			System.out.println(chunkContext.getStepContext());
+			System.out.println("Hello world! step2");
+			return RepeatStatus.FINISHED;
+		}, transactionManager).build();
+	}
+	
+	
+	
+    // 取参数方式@StepScope
+	@Bean
+	public Step step3(JobRepository jobRepository, JdbcTransactionManager transactionManager) {
+		return new StepBuilder("step3", jobRepository).tasklet(tasklet3(null),transactionManager).build();
+	}
+	
+	
+	@Bean
+	@StepScope// 懒加载
+	public Tasklet tasklet3(@Value("#{jobParameters['name']}") String name) {
+		return (contribution, chunkContext) -> {
+			System.out.println("name-----> " + name);
+			return RepeatStatus.FINISHED;
+		};
+	}
+
 }
 /*
 
