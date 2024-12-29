@@ -2,3 +2,7 @@ Job Instance ： Job名称 + 识别参数
 Job Instance 一次执行创建一个Job Excution对象
 
 完整的一次Job Instance 执行sk 能创建一个Job Excution对象，也可能创建多个Job Excution 对象
+
+
+SPIRNG BATCH中，相同的JOB名与相同标识参数只能成功执行一次
+
